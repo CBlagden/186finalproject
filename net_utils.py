@@ -1,7 +1,6 @@
 import os, time, importlib, errno
 import matplotlib.pyplot as plt 
 
-from dt_utils import Timer
 #from networks import HebbDiags
 
 import torch
@@ -13,6 +12,17 @@ from torch.utils.tensorboard import SummaryWriter
 ### Base Classes ###
 ####################
    
+import time
+
+class Timer:    
+    def __enter__(self):
+        self.start = time.time()
+        return self
+
+    def __exit__(self, *args):
+        self.end = time.time()
+        self.elapsed = self.end - self.start
+
 class NetworkBase(nn.Module): 
     def __init__(self):
         """Subclasses must either implement self.loss_fn or override self.average_loss()"""

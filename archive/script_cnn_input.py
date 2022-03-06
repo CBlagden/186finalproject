@@ -1,3 +1,4 @@
+#%%
 import types, os
 from PIL import Image
 import numpy as np
@@ -10,6 +11,7 @@ from data import prob_repeat_to_frac_novel, GenRecogClassifyData, generate_recog
 from plotting import plot_recog_generalization, plot_recog_positive_rates
 from net_utils import load_from_file
 from networks import DetHebb
+import matplotlib.pyplot as plt
 
 #%%
 def forward_remove_readout(self, x): 
@@ -41,48 +43,68 @@ preprocess = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
+
+
 #os.chdir('BradyOliva2008_UniqueObjects')
-os.chdir('/Users/danil/My/School/Columbia/Research/ongoing_plasticity/results/BradyOliva2008_OneOfPairs')
+os.chdir('../Pairs')
 files = [f for f in os.listdir('.') if f.lower().endswith('.jpg')]
+files.sort()
+firstPairs = [files[i] for i in range(0, len(files), 2)]
+secondPairs = [files[i] for i in range(1, len(files), 2)]
+
 #assert len(files)==2400
+print(len(files))
 assert len(files)==200
 
+def get_imagespace(files, name, binarize=False):
+    allImages = torch.empty(len(files), 3, 224, 224)
+    for i,fname in enumerate(files):
+        image = Image.open(fname)
+        allImages[i] = preprocess(image)
+    with torch.no_grad():
+        sampleSpace = resnet(allImages)
+    downsampled = sampleSpace[:,:50]
+    normalized = downsampled - downsampled.mean(dim=1).reshape(-1,1)
+    normalized = np.sqrt(50) * normalized / normalized.norm(dim=1).reshape(-1,1)
+    binarized = normalized.sign()
+    torch.save(normalized, name.format("normalize"))
+    torch.save(binarized, name.format("binarize"))
 
-allImages = torch.empty(len(files), 3, 224, 224)
-for i,fname in enumerate(files):
-    image = Image.open(fname)
-    allImages[i] = preprocess(image)
+get_imagespace(firstPairs, "../publish/conv/BradyOliva2008_OneOfPairs_ResNet18_d=50_{}_firstpair.pkl")
+get_imagespace(secondPairs, "../publish/conv/BradyOliva2008_OneOfPairs_ResNet18_d=50_{}_secondpair.pkl")
 
-#%%
-with torch.no_grad():
-    sampleSpace = resnet(allImages)
 
-#%%
-
-downsampled = sampleSpace[:,:50]
-#torch.save(downsampled, 'BradyOliva2008_OneOfPairs_ResNet18_d=50.pkl')
-normalized = downsampled - downsampled.mean(dim=1).reshape(-1,1)
-normalized = np.sqrt(50) * normalized / normalized.norm(dim=1).reshape(-1,1)
-#torch.save(normalized, 'BradyOliva2008_OneOfPairs_ResNet18_d=50_normalize.pkl')
-binarized = normalized.sign()
-torch.save(binarized, 'BradyOliva2008_OneOfPairs_ResNet18_d=50_binarize.pkl')
+# downsampled = sampleSpace[:,:50]
+# torch.save(downsampled, 'BradyOliva2008_OneOfPairs_ResNet18_d=50.pkl')
+# normalized = downsampled - downsampled.mean(dim=1).reshape(-1,1)
+# normalized = np.sqrt(50) * normalized / normalized.norm(dim=1).reshape(-1,1)
+# torch.save(normalized, '../publish/conv/BradyOliva2008_OneOfPairs_ResNet18_d=50_normalize.pkl')
+# binarized = normalized.sign()
+# torch.save(binarized, '../publish/conv/BradyOliva2008_OneOfPairs_ResNet18_d=50_binarize.pkl')
 
 
 #%%   
 useResNetData = True
 
-if useResNetData:
-    os.chdir('/Users/danil/My/School/Columbia/Research/ongoing_plasticity/results/BradyOliva2008_UniqueObjects')
-    images = torch.load('BradyOliva2008_UniqueObjects_ResNet18_d=50_normalize.pkl')
+# if useResNetData:
+#     # os.chdir('../Objects')
+#     images = torch.load('../publish/conv/BradyOliva2008_UniqueObjects_ResNet18_d=50_binarize.pkl')
+#     dummyClasses = torch.zeros(images.shape[0],1)
+#     sampleSpace = TensorDataset(images, dummyClasses)
+#     generator = GenRecogClassifyData(sampleSpace=sampleSpace)
+#     def generate_recog_images(T, d, R, P=0.5, batchSize=None, multiRep=False):
+#         x,y = generator(T, R, P, batchSize=batchSize, multiRep=multiRep).tensors
+#         return TensorDataset(x, y[...,0:1])
+# else:
+#     generate_recog_images = generate_recog_data
+    
+def generate_recog_images(name, T, d, R, P=0.5, batchSize=None, multiRep=False):
+    images = torch.load(name)
     dummyClasses = torch.zeros(images.shape[0],1)
     sampleSpace = TensorDataset(images, dummyClasses)
     generator = GenRecogClassifyData(sampleSpace=sampleSpace)
-    def generate_recog_images(T, d, R, P=0.5, batchSize=None, multiRep=False):
-        x,y = generator(T, R, P, batchSize=batchSize, multiRep=multiRep).tensors
-        return TensorDataset(x, y[...,0:1])
-else:
-    generate_recog_images = generate_recog_data
-    
+    x,y = generator(T, R, P, batchSize=batchSize, multiRep=multiRep).tensors
+    return TensorDataset(x, y[...,0:1])
 
 #%%
 Rtest = np.unique(np.logspace(0, 3, 20, dtype=int))
@@ -94,14 +116,17 @@ D = 50-n
 d = D+n
 net = DetHebb(D, n, f=f, Ptp=0.99, Pfp=0.01)
 net.evaluate(generate_recog_data(T=5000, d=d, R=5000).tensors[0]) #burn-in A to get to steady-state
+net.evaluate(generate_recog_images('BradyOliva2008_OneOfPairs_ResNet18_d=50_binarize_firstpair.pkl', T=5000, d=d, R=5000).tensors[0]) #burn-in A to get to steady-state
 
 Ptp = np.zeros(len(Rtest))
 Pfp = np.zeros(len(Rtest))
 for i,R in enumerate(Rtest):    
-    X,Y = [xy.numpy() for xy in generate_recog_images(T=min(2400, max(1000, R*20)), d=d, R=R, P=P, multiRep=False).tensors]
+    # X,Y = [xy.numpy() for xy in generate_recog_images(T=min(2400, max(1000, R*20)), d=d, R=R, P=P, multiRep=False).tensors]
+    X,Y = [xy.numpy() for xy in  generate_recog_images('BradyOliva2008_OneOfPairs_ResNet18_d=50_binarize_secondpair.pkl', 
+                            T=min(200, max(100, R*20)), d=d, R=R, P=P, multiRep=False).tensors]
     f = (1 - sum(Y)/len(Y))[0]
       
-    Yhat = net.evaluate(X)
+    Yhat = net.evaluate(X, update=False)
     Ptp[i], Pfp[i] = net.true_false_pos(Y, Yhat)
     acc = net.accuracy(Y, Yhat)
     acc2 = (1-f)*Ptp[i] + f*(1-Pfp[i]) #sanity check   
@@ -118,17 +143,18 @@ ax.legend()
 ax.set_ylim(0,1)
 
 #%%
-os.chdir('/Users/danil/My/School/Columbia/Research/ongoing_plasticity/results/2020-07-31')
+os.chdir('../publish/conv')
 net = load_from_file('HebbNet[50,16,1]_train=cur1_incr=plus1_w1init=randn_b1init=scalar_w2init=scalar.pkl')
-Nh, d = net.w1.shape      
+Nh, d = net.w1.shape 
     
 label = 'HebbFF, '+'ResNet data' if useResNetData else 'random data'
 upToR = float('inf')
 stopAtR = 1000
 gen_data = lambda R: generate_recog_images(T=min(2400, max(1000, R*20)), d=d, R=R, P=0.5, multiRep=False)
-#axGen = axTfp = None
+axGen = axTfp = None
 axTfp,Rs,acc,truePos,falsePos = plot_recog_positive_rates(net, gen_data, upToR=upToR, stopAtR=stopAtR, ax=axTfp, label=label)
 
+plt.show()
     
 
 

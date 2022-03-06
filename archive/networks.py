@@ -469,7 +469,7 @@ class DetHebb():
         self.A = np.zeros((self.N, self.D)) #plastic
                 
               
-    def forward(self, x, debug=False):     
+    def forward(self, x, debug=False, update=True):     
         xW = x[:self.n] #length n
         xA = x[self.n:] #length D
         Ax = self.A.dot(xA)
@@ -478,17 +478,18 @@ class DetHebb():
         h = np.heaviside(a, 0) #h=1 if a>0, h=0 if a<=0
         yHat = np.all(h==0)
 
-        self.A = self.gam*self.A - np.outer(h, xA)  
+        if update:
+            self.A = self.gam*self.A - np.outer(h, xA)  
 
         if debug:
             return a, h, Ax, Wxb, yHat              
         return yHat
 
 
-    def evaluate(self, X):
+    def evaluate(self, X, update=True):
         Yhat = np.zeros((X.shape[0],1))
         for t,x in enumerate(X):
-            Yhat[t] = self.forward(x)
+            Yhat[t] = self.forward(x, update=update)
         return Yhat
     
     
